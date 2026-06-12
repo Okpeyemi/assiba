@@ -1,8 +1,9 @@
-import pg from "pg";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const { Pool } = require("pg");
 import { z } from "zod";
 import Expo from "expo-server-sdk";
 
-const { Pool } = pg;
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
 const expo = new Expo();
 

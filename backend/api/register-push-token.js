@@ -1,6 +1,6 @@
-import pg from "pg";
-
-const { Pool } = pg;
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const { Pool } = require("pg");
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
 
 export default async function handler(req, res) {
