@@ -25,7 +25,10 @@ export function usePushNotifications(onNotification) {
 }
 
 async function registerForPush() {
-  if (!Device.isDevice) return;
+  if (!Device.isDevice) {
+    console.warn("[Push] Skipped: not a physical device");
+    return;
+  }
 
   if (Platform.OS === "android") {
     await Notifications.setNotificationChannelAsync("default", {
@@ -43,11 +46,23 @@ async function registerForPush() {
     finalStatus = status;
   }
 
-  if (finalStatus !== "granted") return;
+  if (finalStatus !== "granted") {
+    console.warn("[Push] Permission refusée");
+    return;
+  }
+
+  const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
+  if (!projectId) {
+    console.error("[Push] EXPO_PUBLIC_PROJECT_ID manquant dans .env");
+    return;
+  }
 
   const { data: token } = await Notifications.getExpoPushTokenAsync({
-    projectId: process.env.EXPO_PUBLIC_PROJECT_ID,
+    projectId,
   });
 
-  await registerPushToken(token).catch(console.error);
+  console.log("[Push] Token obtenu :", token);
+  await registerPushToken(token)
+    .then(() => console.log("[Push] Token enregistré en DB ✓"))
+    .catch((e) => console.error("[Push] Échec enregistrement :", e.message));
 }
