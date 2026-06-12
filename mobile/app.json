@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Assiba",
+    "slug": "assiba",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.assiba.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Assiba n'utilise pas le microphone."
+      }
+    },
+    "android": {
+      "package": "com.assiba.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#6200EE",
+        "foregroundImage": "./assets/adaptive-icon.png"
+      },
+      "permissions": [
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#6200EE",
+          "sounds": []
+        }
+      ]
+    ],
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "REPLACE_WITH_YOUR_EXPO_PROJECT_ID"
+      }
+    }
+  }
+}

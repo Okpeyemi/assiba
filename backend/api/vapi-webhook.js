@@ -1,0 +1,121 @@
+import { sql } from "@vercel/postgres";
+import { z } from "zod";
+import Expo from "expo-server-sdk";
+
+const expo = new Expo();
+
+// VAPI sends call data in the end-of-call-report message
+const VapiWebhookSchema = z.object({
+  message: z.object({
+    type: z.string(),
+    call: z.object({
+      id: z.string(),
+      phoneNumberId: z.string().optional(),
+      startedAt: z.string().optional(),
+      endedAt: z.string().optional(),
+      endedReason: z.string().optional(),
+      customer: z
+        .object({
+          number: z.string().optional(),
+        })
+        .optional(),
+    }),
+    analysis: z
+      .object({
+        summary: z.string().optional(),
+        structuredData: z
+          .object({
+            callerName: z.string().optional(),
+            reason: z.string().optional(),
+            urgency: z.enum(["low", "medium", "high"]).optional(),
+            callbackNumber: z.string().optional(),
+          })
+          .optional(),
+      })
+      .optional(),
+  }),
+});
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  // Validate VAPI secret
+  const secret = req.headers["x-vapi-secret"];
+  if (secret !== process.env.VAPI_WEBHOOK_SECRET) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const parsed = VapiWebhookSchema.safeParse(req.body);
+  if (!parsed.success) {
+    console.error("Invalid payload:", parsed.error);
+    return res.status(400).json({ error: "Invalid payload" });
+  }
+
+  const { message } = parsed.data;
+
+  // Only process end-of-call reports
+  if (message.type !== "end-of-call-report") {
+    return res.status(200).json({ received: true });
+  }
+
+  const { call, analysis } = message;
+  const structured = analysis?.structuredData ?? {};
+
+  // Store the missed call
+  const { rows } = await sql`
+    INSERT INTO missed_calls (
+      vapi_call_id,
+      caller_number,
+      caller_name,
+      reason,
+      urgency,
+      callback_number,
+      summary,
+      started_at,
+      ended_at,
+      ended_reason
+    ) VALUES (
+      ${call.id},
+      ${call.customer?.number ?? null},
+      ${structured.callerName ?? null},
+      ${structured.reason ?? null},
+      ${structured.urgency ?? "medium"},
+      ${structured.callbackNumber ?? call.customer?.number ?? null},
+      ${analysis?.summary ?? null},
+      ${call.startedAt ?? null},
+      ${call.endedAt ?? null},
+      ${call.endedReason ?? null}
+    )
+    RETURNING id
+  `;
+
+  const callId = rows[0].id;
+
+  // Send push notification — read token from DB (registered by mobile app)
+  const tokenRow = await sql`SELECT token FROM push_tokens LIMIT 1`;
+  const pushToken = tokenRow.rows[0]?.token;
+  if (pushToken && Expo.isExpoPushToken(pushToken)) {
+    const urgencyEmoji = { low: "📞", medium: "📲", high: "🚨" };
+    const emoji = urgencyEmoji[structured.urgency ?? "medium"];
+
+    const messages = [
+      {
+        to: pushToken,
+        sound: "default",
+        title: `${emoji} Appel manqué — ${structured.callerName ?? call.customer?.number ?? "Inconnu"}`,
+        body: structured.reason ?? analysis?.summary ?? "Nouvelle demande",
+        data: { callId },
+        priority: structured.urgency === "high" ? "high" : "normal",
+      },
+    ];
+
+    const chunks = expo.chunkPushNotifications(messages);
+    for (const chunk of chunks) {
+      await expo.sendPushNotificationsAsync(chunk).catch(console.error);
+    }
+  }
+
+  return res.status(200).json({ ok: true, callId });
+}
