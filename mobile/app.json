@@ -24,23 +24,15 @@
         "android.permission.VIBRATE"
       ]
     },
-    "plugins": [
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/icon.png",
-          "color": "#6200EE",
-          "sounds": []
-        }
-      ]
-    ],
+    "plugins": [],
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "extra": {
       "eas": {
-        "projectId": "REPLACE_WITH_YOUR_EXPO_PROJECT_ID"
+        "projectId": "9de16f59-0149-4ac0-b7e5-2217b85b6ded"
       }
-    }
+    },
+    "owner": "okpeyemi"
   }
 }
