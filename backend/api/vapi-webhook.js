@@ -1,9 +1,11 @@
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const { Pool } = require("pg");
+const { default: Expo } = await import("expo-server-sdk");
 import { z } from "zod";
 
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
+const expo = new Expo();
 
 const VapiWebhookSchema = z.object({
   message: z.object({
@@ -62,6 +64,7 @@ export default async function handler(req, res) {
         vapi_call_id, caller_number, caller_name, reason, urgency,
         callback_number, summary, started_at, ended_at, ended_reason
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ON CONFLICT (vapi_call_id) DO NOTHING
       RETURNING id`,
       [
         call.id,
@@ -77,7 +80,29 @@ export default async function handler(req, res) {
       ]
     );
 
-    return res.status(200).json({ ok: true, callId: rows[0].id });
+    const callId = rows[0]?.id;
+
+    const tokenRow = await pool.query("SELECT token FROM push_tokens LIMIT 1");
+    const pushToken = tokenRow.rows[0]?.token;
+    if (pushToken && Expo.isExpoPushToken(pushToken)) {
+      const urgencyEmoji = { low: "📞", medium: "📲", high: "🚨" };
+      const emoji = urgencyEmoji[structured.urgency ?? "medium"];
+      const chunks = expo.chunkPushNotifications([
+        {
+          to: pushToken,
+          sound: "default",
+          title: `${emoji} Appel manqué — ${structured.callerName ?? call.customer?.number ?? "Inconnu"}`,
+          body: structured.reason ?? analysis?.summary ?? "Nouvelle demande",
+          data: { callId },
+          priority: structured.urgency === "high" ? "high" : "normal",
+        },
+      ]);
+      for (const chunk of chunks) {
+        await expo.sendPushNotificationsAsync(chunk).catch(console.error);
+      }
+    }
+
+    return res.status(200).json({ ok: true, callId });
   } catch (err) {
     console.error("WEBHOOK_ERROR:", err.message);
     return res.status(500).json({ error: err.message });
