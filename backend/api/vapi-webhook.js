@@ -34,6 +34,7 @@ const VapiWebhookSchema = z.object({
 });
 
 export default async function handler(req, res) {
+  try {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -102,4 +103,8 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({ ok: true, callId });
+  } catch (err) {
+    console.error("WEBHOOK_ERROR:", err);
+    return res.status(500).json({ error: err.message, stack: err.stack });
+  }
 }
