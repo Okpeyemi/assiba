@@ -5,22 +5,6 @@ import { z } from "zod";
 
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
 
-// Firebase Admin — initialisé une seule fois (singleton)
-let firebaseApp = null;
-async function getFirebaseApp() {
-  if (firebaseApp) return firebaseApp;
-  const { default: admin } = await import("firebase-admin");
-  if (!admin.apps.length) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    firebaseApp = admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
-  } else {
-    firebaseApp = admin.apps[0];
-  }
-  return firebaseApp;
-}
-
 const VapiWebhookSchema = z.object({
   message: z.object({
     type: z.string(),
@@ -96,31 +80,27 @@ export default async function handler(req, res) {
 
     const callId = rows[0]?.id;
 
-    // Envoi FCM si un token Android est enregistré et que Firebase est configuré
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-      const tokenRow = await pool.query("SELECT token FROM push_tokens LIMIT 1");
-      const fcmToken = tokenRow.rows[0]?.token;
-
-      if (fcmToken) {
-        const { default: admin } = await import("firebase-admin");
-        await getFirebaseApp();
+    const tokenRow = await pool.query("SELECT token FROM push_tokens LIMIT 1");
+    const pushToken = tokenRow.rows[0]?.token;
+    if (pushToken) {
+      const { default: Expo } = await import("expo-server-sdk");
+      if (Expo.isExpoPushToken(pushToken)) {
+        const expo = new Expo();
         const urgencyEmoji = { low: "📞", medium: "📲", high: "🚨" };
         const emoji = urgencyEmoji[structured.urgency ?? "medium"];
-
-        await admin.messaging().send({
-          token: fcmToken,
-          notification: {
+        const chunks = expo.chunkPushNotifications([
+          {
+            to: pushToken,
+            sound: "default",
             title: `${emoji} Appel manqué — ${structured.callerName ?? call.customer?.number ?? "Inconnu"}`,
             body: structured.reason ?? analysis?.summary ?? "Nouvelle demande",
-          },
-          data: {
-            callId: String(callId ?? ""),
-            urgency: structured.urgency ?? "medium",
-          },
-          android: {
+            data: { callId },
             priority: structured.urgency === "high" ? "high" : "normal",
           },
-        }).catch(console.error);
+        ]);
+        for (const chunk of chunks) {
+          await expo.sendPushNotificationsAsync(chunk).catch(console.error);
+        }
       }
     }
 

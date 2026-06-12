@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@vercel/postgres": "^0.10.0",
-    "firebase-admin": "^14.0.0",
+    "expo-server-sdk": "^6.1.0",
     "pg": "^8.21.0",
     "zod": "^3.23.8"
   },
