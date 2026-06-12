@@ -1,10 +1,11 @@
-import { sql } from "@vercel/postgres";
+import pg from "pg";
 import { z } from "zod";
 import Expo from "expo-server-sdk";
 
+const { Pool } = pg;
+const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
 const expo = new Expo();
 
-// VAPI sends call data in the end-of-call-report message
 const VapiWebhookSchema = z.object({
   message: z.object({
     type: z.string(),
@@ -14,11 +15,7 @@ const VapiWebhookSchema = z.object({
       startedAt: z.string().optional(),
       endedAt: z.string().optional(),
       endedReason: z.string().optional(),
-      customer: z
-        .object({
-          number: z.string().optional(),
-        })
-        .optional(),
+      customer: z.object({ number: z.string().optional() }).optional(),
     }),
     analysis: z
       .object({
@@ -41,7 +38,6 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  // Validate VAPI secret
   const secret = req.headers["x-vapi-secret"];
   if (secret !== process.env.VAPI_WEBHOOK_SECRET) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -55,7 +51,6 @@ export default async function handler(req, res) {
 
   const { message } = parsed.data;
 
-  // Only process end-of-call reports
   if (message.type !== "end-of-call-report") {
     return res.status(200).json({ received: true });
   }
@@ -63,44 +58,35 @@ export default async function handler(req, res) {
   const { call, analysis } = message;
   const structured = analysis?.structuredData ?? {};
 
-  // Store the missed call
-  const { rows } = await sql`
-    INSERT INTO missed_calls (
-      vapi_call_id,
-      caller_number,
-      caller_name,
-      reason,
-      urgency,
-      callback_number,
-      summary,
-      started_at,
-      ended_at,
-      ended_reason
-    ) VALUES (
-      ${call.id},
-      ${call.customer?.number ?? null},
-      ${structured.callerName ?? null},
-      ${structured.reason ?? null},
-      ${structured.urgency ?? "medium"},
-      ${structured.callbackNumber ?? call.customer?.number ?? null},
-      ${analysis?.summary ?? null},
-      ${call.startedAt ?? null},
-      ${call.endedAt ?? null},
-      ${call.endedReason ?? null}
-    )
-    RETURNING id
-  `;
+  const { rows } = await pool.query(
+    `INSERT INTO missed_calls (
+      vapi_call_id, caller_number, caller_name, reason, urgency,
+      callback_number, summary, started_at, ended_at, ended_reason
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    RETURNING id`,
+    [
+      call.id,
+      call.customer?.number ?? null,
+      structured.callerName ?? null,
+      structured.reason ?? null,
+      structured.urgency ?? "medium",
+      structured.callbackNumber ?? call.customer?.number ?? null,
+      analysis?.summary ?? null,
+      call.startedAt ?? null,
+      call.endedAt ?? null,
+      call.endedReason ?? null,
+    ]
+  );
 
   const callId = rows[0].id;
 
-  // Send push notification — read token from DB (registered by mobile app)
-  const tokenRow = await sql`SELECT token FROM push_tokens LIMIT 1`;
+  const tokenRow = await pool.query("SELECT token FROM push_tokens LIMIT 1");
   const pushToken = tokenRow.rows[0]?.token;
   if (pushToken && Expo.isExpoPushToken(pushToken)) {
     const urgencyEmoji = { low: "📞", medium: "📲", high: "🚨" };
     const emoji = urgencyEmoji[structured.urgency ?? "medium"];
 
-    const messages = [
+    const chunks = expo.chunkPushNotifications([
       {
         to: pushToken,
         sound: "default",
@@ -109,9 +95,7 @@ export default async function handler(req, res) {
         data: { callId },
         priority: structured.urgency === "high" ? "high" : "normal",
       },
-    ];
-
-    const chunks = expo.chunkPushNotifications(messages);
+    ]);
     for (const chunk of chunks) {
       await expo.sendPushNotificationsAsync(chunk).catch(console.error);
     }

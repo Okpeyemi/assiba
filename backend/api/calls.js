@@ -1,12 +1,13 @@
-import { sql } from "@vercel/postgres";
+import pg from "pg";
+
+const { Pool } = pg;
+const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
 
 export default async function handler(req, res) {
   if (req.method === "GET") {
-    const { rows } = await sql`
-      SELECT * FROM missed_calls
-      ORDER BY created_at DESC
-      LIMIT 50
-    `;
+    const { rows } = await pool.query(
+      "SELECT * FROM missed_calls ORDER BY created_at DESC LIMIT 50"
+    );
     return res.status(200).json(rows);
   }
 
@@ -14,9 +15,7 @@ export default async function handler(req, res) {
     const { id } = req.query;
     if (!id) return res.status(400).json({ error: "Missing id" });
 
-    await sql`
-      UPDATE missed_calls SET read_at = NOW() WHERE id = ${id}
-    `;
+    await pool.query("UPDATE missed_calls SET read_at = NOW() WHERE id = $1", [id]);
     return res.status(200).json({ ok: true });
   }
 
