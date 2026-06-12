@@ -1,11 +1,9 @@
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const { Pool } = require("pg");
-const { default: Expo } = await import("expo-server-sdk");
 import { z } from "zod";
 
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
-const expo = new Expo();
 
 const VapiWebhookSchema = z.object({
   message: z.object({
@@ -84,21 +82,25 @@ export default async function handler(req, res) {
 
     const tokenRow = await pool.query("SELECT token FROM push_tokens LIMIT 1");
     const pushToken = tokenRow.rows[0]?.token;
-    if (pushToken && Expo.isExpoPushToken(pushToken)) {
-      const urgencyEmoji = { low: "📞", medium: "📲", high: "🚨" };
-      const emoji = urgencyEmoji[structured.urgency ?? "medium"];
-      const chunks = expo.chunkPushNotifications([
-        {
-          to: pushToken,
-          sound: "default",
-          title: `${emoji} Appel manqué — ${structured.callerName ?? call.customer?.number ?? "Inconnu"}`,
-          body: structured.reason ?? analysis?.summary ?? "Nouvelle demande",
-          data: { callId },
-          priority: structured.urgency === "high" ? "high" : "normal",
-        },
-      ]);
-      for (const chunk of chunks) {
-        await expo.sendPushNotificationsAsync(chunk).catch(console.error);
+    if (pushToken) {
+      const { default: Expo } = await import("expo-server-sdk");
+      if (Expo.isExpoPushToken(pushToken)) {
+        const expo = new Expo();
+        const urgencyEmoji = { low: "📞", medium: "📲", high: "🚨" };
+        const emoji = urgencyEmoji[structured.urgency ?? "medium"];
+        const chunks = expo.chunkPushNotifications([
+          {
+            to: pushToken,
+            sound: "default",
+            title: `${emoji} Appel manqué — ${structured.callerName ?? call.customer?.number ?? "Inconnu"}`,
+            body: structured.reason ?? analysis?.summary ?? "Nouvelle demande",
+            data: { callId },
+            priority: structured.urgency === "high" ? "high" : "normal",
+          },
+        ]);
+        for (const chunk of chunks) {
+          await expo.sendPushNotificationsAsync(chunk).catch(console.error);
+        }
       }
     }
 
