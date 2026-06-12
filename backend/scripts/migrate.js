@@ -1,9 +1,13 @@
-import { sql } from "@vercel/postgres";
+import pg from "pg";
+
+const { Client } = pg;
 
 async function migrate() {
+  const client = new Client({ connectionString: process.env.POSTGRES_URL });
+  await client.connect();
   console.log("Running migrations...");
 
-  await sql`
+  await client.query(`
     CREATE TABLE IF NOT EXISTS missed_calls (
       id            SERIAL PRIMARY KEY,
       vapi_call_id  TEXT UNIQUE NOT NULL,
@@ -19,22 +23,23 @@ async function migrate() {
       read_at       TIMESTAMPTZ,
       created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 
-  await sql`
+  await client.query(`
     CREATE INDEX IF NOT EXISTS idx_missed_calls_created_at
       ON missed_calls (created_at DESC)
-  `;
+  `);
 
-  await sql`
+  await client.query(`
     CREATE TABLE IF NOT EXISTS push_tokens (
       id         SERIAL PRIMARY KEY,
       token      TEXT UNIQUE NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-  `;
+  `);
 
+  await client.end();
   console.log("Migrations complete.");
   process.exit(0);
 }
