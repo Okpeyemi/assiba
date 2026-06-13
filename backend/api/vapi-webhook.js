@@ -32,6 +32,23 @@ const VapiWebhookSchema = z.object({
   }),
 });
 
+let firebaseApp = null;
+function getFirebaseApp() {
+  if (firebaseApp) return firebaseApp;
+  const { default: admin } = require("firebase-admin");
+  if (admin.apps.length > 0) {
+    firebaseApp = admin.apps[0];
+    return firebaseApp;
+  }
+  const serviceAccountB64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64;
+  if (!serviceAccountB64) throw new Error("FIREBASE_SERVICE_ACCOUNT_B64 not set");
+  const serviceAccount = JSON.parse(Buffer.from(serviceAccountB64, "base64").toString("utf8"));
+  firebaseApp = admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+  return firebaseApp;
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") {
@@ -82,35 +99,34 @@ export default async function handler(req, res) {
 
     const tokenRow = await pool.query("SELECT token FROM push_tokens ORDER BY updated_at DESC LIMIT 1");
     const pushToken = tokenRow.rows[0]?.token;
-    let pushTickets = null;
+    let pushResult = null;
+
     if (pushToken) {
-      const { default: Expo } = await import("expo-server-sdk");
-      if (Expo.isExpoPushToken(pushToken)) {
-        const expo = new Expo();
+      try {
+        const { default: admin } = require("firebase-admin");
+        getFirebaseApp();
         const urgencyEmoji = { low: "📞", medium: "📲", high: "🚨" };
         const emoji = urgencyEmoji[structured.urgency ?? "medium"];
-        const chunks = expo.chunkPushNotifications([
-          {
-            to: pushToken,
-            sound: "default",
+        const response = await admin.messaging().send({
+          token: pushToken,
+          notification: {
             title: `${emoji} Appel manqué — ${structured.callerName ?? call.customer?.number ?? "Inconnu"}`,
             body: structured.reason ?? analysis?.summary ?? "Nouvelle demande",
-            data: { callId },
-            priority: structured.urgency === "high" ? "high" : "normal",
           },
-        ]);
-        pushTickets = [];
-        for (const chunk of chunks) {
-          const tickets = await expo.sendPushNotificationsAsync(chunk).catch((e) => {
-            console.error("PUSH_SEND_ERROR:", e.message);
-            return [];
-          });
-          pushTickets.push(...tickets);
-        }
+          android: {
+            priority: structured.urgency === "high" ? "high" : "normal",
+            notification: { sound: "default" },
+          },
+          data: { callId: String(callId ?? "") },
+        });
+        pushResult = { ok: true, messageId: response };
+      } catch (e) {
+        console.error("PUSH_ERROR:", e.message);
+        pushResult = { ok: false, error: e.message };
       }
     }
 
-    return res.status(200).json({ ok: true, callId, _pushDebug: pushTickets });
+    return res.status(200).json({ ok: true, callId, _pushDebug: pushResult });
   } catch (err) {
     console.error("WEBHOOK_ERROR:", err.message);
     return res.status(500).json({ error: err.message });
