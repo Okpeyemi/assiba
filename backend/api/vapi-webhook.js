@@ -82,6 +82,7 @@ export default async function handler(req, res) {
 
     const tokenRow = await pool.query("SELECT token FROM push_tokens ORDER BY updated_at DESC LIMIT 1");
     const pushToken = tokenRow.rows[0]?.token;
+    let pushTickets = null;
     if (pushToken) {
       const { default: Expo } = await import("expo-server-sdk");
       if (Expo.isExpoPushToken(pushToken)) {
@@ -98,17 +99,18 @@ export default async function handler(req, res) {
             priority: structured.urgency === "high" ? "high" : "normal",
           },
         ]);
+        pushTickets = [];
         for (const chunk of chunks) {
           const tickets = await expo.sendPushNotificationsAsync(chunk).catch((e) => {
             console.error("PUSH_SEND_ERROR:", e.message);
             return [];
           });
-          console.log("PUSH_TICKETS:", JSON.stringify(tickets));
+          pushTickets.push(...tickets);
         }
       }
     }
 
-    return res.status(200).json({ ok: true, callId });
+    return res.status(200).json({ ok: true, callId, _pushDebug: pushTickets });
   } catch (err) {
     console.error("WEBHOOK_ERROR:", err.message);
     return res.status(500).json({ error: err.message });
