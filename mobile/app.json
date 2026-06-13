@@ -16,8 +16,9 @@
     "android": {
       "package": "com.assiba.app",
       "adaptiveIcon": {
-        "backgroundColor": "#6200EE",
-        "foregroundImage": "./assets/adaptive-icon.png"
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
