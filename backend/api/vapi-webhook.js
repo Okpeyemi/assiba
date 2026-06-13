@@ -99,7 +99,11 @@ export default async function handler(req, res) {
           },
         ]);
         for (const chunk of chunks) {
-          await expo.sendPushNotificationsAsync(chunk).catch(console.error);
+          const tickets = await expo.sendPushNotificationsAsync(chunk).catch((e) => {
+            console.error("PUSH_SEND_ERROR:", e.message);
+            return [];
+          });
+          console.log("PUSH_TICKETS:", JSON.stringify(tickets));
         }
       }
     }
