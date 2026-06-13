@@ -80,7 +80,7 @@ export default async function handler(req, res) {
 
     const callId = rows[0]?.id;
 
-    const tokenRow = await pool.query("SELECT token FROM push_tokens LIMIT 1");
+    const tokenRow = await pool.query("SELECT token FROM push_tokens ORDER BY updated_at DESC LIMIT 1");
     const pushToken = tokenRow.rows[0]?.token;
     if (pushToken) {
       const { default: Expo } = await import("expo-server-sdk");
