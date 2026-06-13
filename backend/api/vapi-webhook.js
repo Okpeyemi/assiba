@@ -32,10 +32,11 @@ const VapiWebhookSchema = z.object({
   }),
 });
 
+const admin = require("firebase-admin");
+
 let firebaseApp = null;
 function getFirebaseApp() {
   if (firebaseApp) return firebaseApp;
-  const { default: admin } = require("firebase-admin");
   if (admin.apps.length > 0) {
     firebaseApp = admin.apps[0];
     return firebaseApp;
@@ -103,7 +104,6 @@ export default async function handler(req, res) {
 
     if (pushToken) {
       try {
-        const { default: admin } = require("firebase-admin");
         getFirebaseApp();
         const urgencyEmoji = { low: "📞", medium: "📲", high: "🚨" };
         const emoji = urgencyEmoji[structured.urgency ?? "medium"];
