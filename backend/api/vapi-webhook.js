@@ -2,6 +2,8 @@ import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const { Pool } = require("pg");
 import { z } from "zod";
+import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { getMessaging } from "firebase-admin/messaging";
 
 const pool = new Pool({ connectionString: process.env.POSTGRES_URL });
 
@@ -32,22 +34,14 @@ const VapiWebhookSchema = z.object({
   }),
 });
 
-const admin = require("firebase-admin");
-
-let firebaseApp = null;
 function getFirebaseApp() {
-  if (firebaseApp) return firebaseApp;
-  if (admin.apps.length > 0) {
-    firebaseApp = admin.apps[0];
-    return firebaseApp;
-  }
+  if (getApps().length > 0) return getApps()[0];
   const serviceAccountB64 = process.env.FIREBASE_SERVICE_ACCOUNT_B64;
   if (!serviceAccountB64) throw new Error("FIREBASE_SERVICE_ACCOUNT_B64 not set");
-  const serviceAccount = JSON.parse(Buffer.from(serviceAccountB64, "base64").toString("utf8"));
-  firebaseApp = admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-  });
-  return firebaseApp;
+  const serviceAccount = JSON.parse(
+    Buffer.from(serviceAccountB64, "base64").toString("utf8")
+  );
+  return initializeApp({ credential: cert(serviceAccount) });
 }
 
 export default async function handler(req, res) {
@@ -98,16 +92,18 @@ export default async function handler(req, res) {
 
     const callId = rows[0]?.id;
 
-    const tokenRow = await pool.query("SELECT token FROM push_tokens ORDER BY updated_at DESC LIMIT 1");
+    const tokenRow = await pool.query(
+      "SELECT token FROM push_tokens ORDER BY updated_at DESC LIMIT 1"
+    );
     const pushToken = tokenRow.rows[0]?.token;
     let pushResult = null;
 
     if (pushToken) {
       try {
-        getFirebaseApp();
+        const app = getFirebaseApp();
         const urgencyEmoji = { low: "📞", medium: "📲", high: "🚨" };
         const emoji = urgencyEmoji[structured.urgency ?? "medium"];
-        const response = await admin.messaging().send({
+        const messageId = await getMessaging(app).send({
           token: pushToken,
           notification: {
             title: `${emoji} Appel manqué — ${structured.callerName ?? call.customer?.number ?? "Inconnu"}`,
@@ -119,7 +115,7 @@ export default async function handler(req, res) {
           },
           data: { callId: String(callId ?? "") },
         });
-        pushResult = { ok: true, messageId: response };
+        pushResult = { ok: true, messageId };
       } catch (e) {
         console.error("PUSH_ERROR:", e.message);
         pushResult = { ok: false, error: e.message };
