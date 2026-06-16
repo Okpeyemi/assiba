@@ -1,14 +1,11 @@
 # État du projet Assiba
 
-## Décision en cours
-Les **notifications push sont en pause** — le système de base fonctionne mais la livraison FCM bloque encore (voir détails ci-dessous). On passe à autre chose.
-
----
+_Dernière mise à jour : 2026-06-16_
 
 ## Architecture
 
 - **Backend** : Node.js / Vercel serverless — `https://assiba.vercel.app`
-- **Mobile** : React Native / Expo SDK 54 — dev build Android (APK installé)
+- **Mobile** : React Native / Expo SDK 56 — dev build Android (APK installé)
 - **DB** : Prisma Postgres (`db.prisma.io`)
 - **VAPI** : assistant vocal qui déclenche le webhook après chaque appel manqué
 
@@ -20,7 +17,7 @@ Les **notifications push sont en pause** — le système de base fonctionne mais
 - DB : tables `missed_calls` et `push_tokens` opérationnelles
 - API `/api/calls` (GET + PATCH) et `/api/register-push-token` (POST) fonctionnent
 - Dev build Android installé, Firebase initialisé, FCM token brut enregistré en DB
-- L'app mobile affiche les appels manqués et les marque comme lus
+- L'app mobile affiche la liste des appels manqués et les marque comme lus
 
 ---
 
@@ -32,13 +29,13 @@ Les **notifications push sont en pause** — le système de base fonctionne mais
 3. **Expo push service** → erreur `InvalidCredentials` : Expo ne trouvait pas les credentials FCM → switché sur Firebase Admin SDK direct
 4. **Firebase Admin SDK** → variable `FIREBASE_SERVICE_ACCOUNT_B64` ajoutée dans Vercel → dernier test retournait `{"ok":false,"error":"Cannot read properties of undefined (reading 'apps')"}` → corrigé (require CJS fixé dans commit `9cfd1ea`) mais **pas encore retesté**
 
-### Prochaine étape si on reprend
-Relancer le test webhook et vérifier que `_pushDebug` retourne `{"ok":true,"messageId":"..."}` :
+### Pour reprendre plus tard
 ```bash
 cd backend && WEBHOOK_URL=https://assiba.vercel.app \
 VAPI_WEBHOOK_SECRET=adf447c7843b16223bf5ce21767482106396d997774ba6e759bb244dabc39ec4 \
 node vapi/test-webhook.js
 ```
+Vérifier que `_pushDebug` retourne `{"ok":true,"messageId":"..."}`.
 
 ### Fichiers clés
 - `backend/api/vapi-webhook.js` — webhook avec Firebase Admin SDK
